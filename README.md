@@ -22,8 +22,10 @@ El log de la simulación no fue arrojado, pero en cambio se tiene un registro en
     ovito movieEMD.lammps
 .
 
-    tail -1000 rdf_c4oh.rdf > rdf_c4oh-1.rdf
-    cut -f 2-3 -d' ' rdf_c4oh-1.rdf > RDF_c4oh_clean.rdf
-    tail -1000 rdf_c5ho.rdf > rdf_c5ho-1.rdf
-    cut -f 2-3 -d' ' rdf_c5ho-1.rdf > RDF_c5ho_clean.rdf
-    xmgrace RDF_c4oh_clean.rdf RDF_c5ho_clean.rdf 
+    tail -1000 rdf_c4oh.rdf | cut -f 2-3 -d' ' > RDF_c4oh_clear.rdf
+.
+    
+    tail -1000 rdf_c5ho.rdf | cut -f 2-3 -d' ' > RDF_c5ho_clean.rdf
+.
+    
+    xmgrace RDF_c4oh_clear.rdf RDF_c5ho_clean.rdf 
