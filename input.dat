@@ -1,0 +1,175 @@
+#  This is the control script for LAMMPS
+
+echo			both
+log		1.1_Initialize.out
+
+#-------------------------------------------------------------------------------
+# Stage 1.1: Initialize LAMMPS run for 3-d periodic
+#-------------------------------------------------------------------------------
+
+units			real
+boundary		p p p
+atom_style		full
+
+pair_style		lj/class2/coul/long 11.5
+kspace_style		pppm 0.00001
+pair_modify		tail yes
+bond_style		class2
+angle_style		class2
+dihedral_style		class2
+improper_style		class2
+special_bonds		lj/coul 0.0 0.0 1.0
+
+read_data		structure.dat
+
+include			pairparameters.dat
+
+neighbor		3.0 multi #2.0 bien
+neigh_modify		delay 0 every 1 check yes
+
+variable		R		equal 0.00198722
+variable		sysvol		equal vol
+variable		sysmass		equal mass(all)/6.0221367e+023
+variable		sysdensity	equal v_sysmass/v_sysvol/1.0e-24
+variable		coulomb		equal ecoul+elong
+variable		etotal		equal etotal
+variable		pe		equal pe
+variable		ke		equal ke
+variable		evdwl		equal evdwl
+variable		epair		equal epair
+variable		ebond		equal ebond
+variable		eangle		equal eangle
+variable		edihed		equal edihed
+variable		eimp		equal eimp
+variable		lx		equal lx
+variable		ly		equal ly
+variable		lz		equal lz
+variable		Nthermo		equal 0
+variable		cella		equal lx
+variable		cellb		equal sqrt(ly*ly+xy*xy)
+variable		cellc		equal sqrt(lz*lz+xz*xz+yz*yz)
+variable		cellalpha	equal acos((xy*xz+ly*yz)/(v_cellb*v_cellc))
+variable		cellbeta	equal acos(xz/v_cellc)
+variable		cellgamma	equal acos(xy/v_cellb)
+variable		p		equal press
+variable		pxx		equal pxx
+variable		pyy		equal pyy
+variable		pzz		equal pzz
+variable		pyz		equal pyz
+variable		pxz		equal pxz
+variable		pxy		equal pxy
+variable		sxx		equal -pxx
+variable		syy		equal -pyy
+variable		szz		equal -pzz
+variable		syz		equal -pyz
+variable		sxz		equal -pxz
+variable		sxy		equal -pxy
+variable		fmax		equal fmax
+variable	        fnorm		equal fnorm
+variable		time   equal step*dt+0.000001
+variable               t_npt   equal 100000
+variable               Ne     equal  10
+variable               Nf     equal ${t_npt}/10
+variable               Nr     equal ${Nf}/${Ne}
+
+
+
+thermo_style		custom step v_time press vol v_sysdensity temp ebond eangle edihed eimp evdwl ecoul etail elong pe ke
+
+thermo_modify		flush yes
+
+
+#
+# Set up the fixed and movable groups
+#
+
+group		movable union all
+group		fixed subtract all movable
+
+log		1.1_NPT.out
+#-------------------------------------------------------------------------------
+# Stage 1.1: NPT integration for 100 fs with a timestep of 0.1 fs
+#             Temperature 298.15 K
+#             Pressure 0.1 MPa
+#-------------------------------------------------------------------------------
+
+reset_timestep		0
+thermo_style		custom step v_time press vol v_sysdensity temp ebond eangle edihed eimp evdwl ecoul etail elong pe ke
+thermo			500
+fix			1 movable npt temp 298.15 298.15 100 iso 0.9869233 0.9869233 100 drag 0 mtk yes 
+
+fix                    Dens    all ave/time 100 1 100 v_sysdensity file eta_hex.dens
+fix                    DensAve all ave/time ${Ne} ${Nr} ${Nf} v_sysdensity file prom_eta_hex.dens
+
+dump			trj all custom 10000 1.2.Trajectory.xyz id mol type q x y z
+fix			trjE all ave/time 10 1 10000 v_etotal v_pe v_ke file 1.2.energies.txt
+timestep		1.0
+run			${t_npt}
+undump			trj
+unfix			trjE
+
+unfix			1
+unfix			Dens
+unfix			DensAve
+
+write_data      NPT.dat 
+
+
+log		1.2_NVT.out
+#-------------------------------------------------------------------------------
+# Stage 1.2: NVT integration for 100000 steps with a timestep of 1.0 fs
+#             Temperature 298.15 K
+#-------------------------------------------------------------------------------
+variable               temd   equal 100000
+variable               Ne     equal  10
+variable               Nr_rdf equal 0.5*${temd}/${Ne}
+reset_timestep		500
+thermo_style		custom step v_time press vol v_sysdensity temp ebond eangle edihed eimp evdwl ecoul etail pe ke
+thermo			${Nthermo}
+fix			1 all nve
+fix			2 all temp/rescale 10 298.15 298.15 20 1.0
+fix			3 all ave/time 1 99 1000 v_time c_thermo_temp c_thermo_press v_sysvol v_sysdensity v_etotal v_pe v_ke v_evdwl v_coulomb v_sxx v_syy v_szz v_syz v_sxz v_sxy file 1.2_averages.txt
+fix			4 all ave/time 100  1 1000 v_time  c_thermo_temp c_thermo_press v_sysvol v_sysdensity v_etotal v_pe v_ke v_evdwl v_coulomb v_sxx v_syy v_szz v_syz v_sxz v_sxy file 1.2_instantaneous.txt
+
+
+# RDF COM
+
+#RDF etanol-etanol
+compute         rdfc_nvt all rdf 500  1  1
+fix         5 all ave/time ${Ne} ${Nr_rdf} ${temd} c_rdfc_nvt[*] file rdf_com1.rdf mode vector
+
+#RDF etanol-hexano
+compute         rdfc2_nvt all rdf 500 1  2
+fix         6 all ave/time ${Ne} ${Nr_rdf} ${temd} c_rdfc2_nvt[*] file rdf_com2.rdf mode vector
+
+#RDF hexano-hexano
+compute         rdfc3_nvt all rdf 500  2  2
+fix         7 all ave/time ${Ne} ${Nr_rdf} ${temd} c_rdfc3_nvt[*] file rdf_com3.rdf mode vector
+
+
+# RDF O-H···O
+compute         rdfc4_nvt all rdf 1000 5 6
+fix         8 all ave/time ${Ne} ${Nr_rdf} ${temd} c_rdfc4_nvt[*] file rdf_c4oh.rdf mode vector
+
+# RDF H-O···H-C
+compute         rdfc5_nvt all rdf 1000 6 4
+fix         9 all ave/time ${Ne} ${Nr_rdf} ${temd} c_rdfc5_nvt[*] file rdf_c5ho.rdf mode vector
+
+thermo       500
+dump 	               movieemd all custom 200 movieEMD.lammps id mol type x y z
+timestep		1.0
+run			${temd}
+
+undump movieemd
+unfix			1
+unfix			2
+unfix			3
+unfix			4
+unfix			5
+unfix			6
+unfix			7
+unfix			8
+unfix			9
+
+write_data              NVT.dat
+
